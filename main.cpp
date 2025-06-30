@@ -7,6 +7,40 @@
 #include <string>
 #include <sstream>
 
+// biblioteca para carregamento de imagens
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+// variavel para textura do fundo
+GLuint texturaFundo;
+
+// variavel para textura do botao
+//GLuint texturaBotaoJogar;
+
+// fun??o para carregar textura
+GLuint carregarTextura(const char* caminho) {
+    int largura, altura, canais;
+    unsigned char* imagem = stbi_load(caminho, &largura, &altura, &canais, 0);
+    if (!imagem) {
+        std::cerr << "Erro ao carregar imagem: " << caminho << std::endl;
+        exit(1);
+    }
+
+    GLuint texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
+    
+    GLenum formato = (canais == 4) ? GL_RGBA : GL_RGB;
+
+    glTexImage2D(GL_TEXTURE_2D, 0, formato, largura, altura, 0, formato, GL_UNSIGNED_BYTE, imagem);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    stbi_image_free(imagem);
+    return texID;
+}
+
+
 // Constantes do alvo
 const float RAIO_EXTERNO = 1.0f;
 const float DISTANCIA_ALVO = 10.0f;
@@ -21,11 +55,11 @@ float pos_final[3] = {0.0f, 0.0f, DISTANCIA_ALVO};
 float passo_animacao = 0.0f;
 bool lancando = false;
 
-// Braço
+// Bra?o
 float angulo_braco = 0.0f;
 bool animando_lancamento = false;
 
-// Medidor de precisão
+// Medidor de precis?o
 bool oscilando = true;
 float posicao_medidor = 0.0f;  // Varia de -1 a 1
 float precisao = 1.0f;         // De 0 a 1
@@ -36,7 +70,7 @@ const float GRAVIDADE = 2.0f;
 enum State { MENU, GAME, FINAL };
 static State state = MENU;
 static int mode = 1;   // 1=1v1,2=2v2
-// estatísticas
+// estat?sticas
 struct Jogador { 
     std::string nome; 
     int pontos, bull, lances; 
@@ -46,15 +80,15 @@ static std::vector<Jogador> jogadores;
 static int atual=0, rodada=1;
 const int MAX_LANCES = 5;
  
-// --- Adicione no topo, após as flags existentes ---
-static bool resetando = false;  // controla animação de retorno da mão
+// --- Adicione no topo, ap?s as flags existentes ---
+static bool resetando = false;  // controla anima??o de retorno da m?o
 
-// função auxiliar para texto 2D em pixels
-static void drawText2D(int x, int y, const char *s) {
+// fun??o auxiliar para texto 2D em pixels
+static void drawText2D(int x, int y, const char *s, void *fonte = GLUT_BITMAP_HELVETICA_18) {
     glRasterPos2i(x, y);
-    while (*s) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *s++);
+    while (*s) glutBitmapCharacter(fonte, *s++);
 }
-// protótipo para função de HUD (deve vir antes de display)
+// prot?tipo para fun??o de HUD (deve vir antes de display)
 static void drawHUD();
 
 void desenharAlvo() {
@@ -90,7 +124,7 @@ void desenharMira() {
     glLineWidth(2.0f);
     glColor3f(0.0f, 1.0f, 0.0f);
 
-    // Círculo central
+    // C?rculo central
     float radius = 0.03f;
     glBegin(GL_LINE_LOOP);
     for (int i = 0; i < 32; i++) {
@@ -165,11 +199,11 @@ void desenharMaoEDardo() {
     glTranslatef(-1.0f, -1.0f, 2.0f);
     glRotatef(angulo_braco, 0, 0, 1);
 
-    // Braço
+    // Bra?o
     glColor3f(0.8f,0.6f,0.4f);
     glPushMatrix(); glScalef(0.2f,1.0f,0.2f); glutSolidCube(1.0f); glPopMatrix();
 
-    // Mão (esfera)
+    // M?o (esfera)
     glPushMatrix(); glTranslatef(0.0f,0.5f,0.0f);
       glColor3f(0.8f,0.6f,0.4f); glutSolidSphere(0.15f,20,20);
 
@@ -183,7 +217,7 @@ void desenharMaoEDardo() {
           glPopMatrix();
       }
 
-      // Dardo na mão (se não iniciado)
+      // Dardo na m?o (se n?o iniciado)
       if (!lancando && !animando_lancamento) {
           glColor3f(0.0f,0.0f,1.0f);
           glPushMatrix();
@@ -233,11 +267,26 @@ void display() {
         gluOrtho2D(0, 800, 0, 600);
         glMatrixMode(GL_MODELVIEW);  glPushMatrix(); glLoadIdentity();
         glDisable(GL_DEPTH_TEST);
+        
+        // desenhando um retÃ¢ngulo com a textura de fundo
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, texturaFundo);
+        glColor3f(1.0f, 1.0f, 1.0f); // cor branca para nÃ£o alterar a textura
+
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(800.0f, 0.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(800.0f, 600.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 600.0f);
+        glEnd();
+
+        glDisable(GL_TEXTURE_2D);
+
 
         glColor3f(1,1,1);
-        drawText2D(300, 400, "Jogo de Dardos 3D");
-        drawText2D(300, 350, "1 - Jogo 1v1 (2 jogadores)");
-        drawText2D(300, 320, "2 - Singleplayer (treino)");
+        drawText2D(300, 400, "Jogo de Dardos 3D", GLUT_BITMAP_TIMES_ROMAN_24);
+        drawText2D(300, 350, "1 - Jogo 1v1 (2 jogadores)", GLUT_BITMAP_TIMES_ROMAN_24);
+        drawText2D(300, 320, "2 - Singleplayer (treino)", GLUT_BITMAP_TIMES_ROMAN_24);
 
         glEnable(GL_DEPTH_TEST);
         glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
@@ -246,7 +295,7 @@ void display() {
     }
 
     if(state==FINAL){
-        // tela de estatísticas finais
+        // tela de estat?sticas finais
         glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
         gluOrtho2D(0,800,0,600);
         glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
@@ -269,7 +318,7 @@ void display() {
         return;
     }
 
-    // --- código existente do jogo ---
+    // --- codigo existente do jogo ---
     drawHUD();
     glLoadIdentity();
     gluLookAt(0,0,0, 0,0,1, 0,1,0);
@@ -312,7 +361,7 @@ void keyboard(unsigned char key, int x, int y) {
         oscilando = false;
         animando_lancamento = true;
         precisao = 1.0f - fabs(posicao_medidor);
-        std::cout << "Precisão capturada: " << precisao * 100 << "%" << std::endl;
+        std::cout << "Precis?o capturada: " << precisao * 100 << "%" << std::endl;
     } else if (key == 'r') {
         animando_lancamento = lancando = resetando = false;
         oscilando = true;
@@ -324,12 +373,12 @@ void keyboard(unsigned char key, int x, int y) {
 }
 
 void atualizar(int value) {
-    // oscilação do medidor
+    // oscila??o do medidor
     if (oscilando) {
         posicao_medidor = sin(glutGet(GLUT_ELAPSED_TIME) * 0.005f);
     }
 
-    // animação do braço subindo
+    // anima??o do bra?o subindo
     if (animando_lancamento) {
         angulo_braco += 5.0f;
         if (angulo_braco >= 90.0f) {
@@ -338,7 +387,7 @@ void atualizar(int value) {
             lancando = true;
             passo_animacao = 0.0f;
 
-            // cálcula dispersão conforme precisão
+            // c?lcula dispers?o conforme precis?o
             float scatter = (1.0f - precisao) * RAIO_EXTERNO;
             float offX = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * scatter;
             float offY = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * scatter;
@@ -347,20 +396,20 @@ void atualizar(int value) {
             pos_final[2] = DISTANCIA_ALVO;
         }
     }
-    // animação do dardo voando
+    // anima??o do dardo voando
     else if (lancando) {
         passo_animacao += 0.02f;
         if (passo_animacao >= 1.0f) {
             passo_animacao = 1.0f;
             lancando = false;
-            resetando = true;           // inicia reset da mão e medidor
+            resetando = true;           // inicia reset da m?o e medidor
         }
         float t = passo_animacao;
         pos_dardo[0] = pos_final[0] * t;
         pos_dardo[1] = pos_final[1] * t - 0.5f * GRAVIDADE * t * t;
         pos_dardo[2] = DISTANCIA_ALVO * t;
     }
-    // reset: desce o braço e reinicia o medidor
+    // reset: desce o bra?o e reinicia o medidor
     else if (resetando) {
         angulo_braco -= 2.0f;
         if (angulo_braco <= 0.0f) {
@@ -370,7 +419,7 @@ void atualizar(int value) {
             passo_animacao  = 0.0f;
             posicao_medidor = 0.0f;
 
-            // cálculo de pontos exemplo
+            // c?lculo de pontos exemplo
             Jogador &J = jogadores[atual];
             float dist = sqrt(pos_dardo[0]*pos_dardo[0] +
                               pos_dardo[1]*pos_dardo[1]);
@@ -386,7 +435,7 @@ void atualizar(int value) {
             J.lances   += 1;
             J.somaPrec += precisao * 100.0f;
 
-            // avança jogador/rodada
+            // avan?a jogador/rodada
             atual++;
             if (atual >= (int)jogadores.size()) {
                 atual = 0;
@@ -408,9 +457,17 @@ void init() {
     glLoadIdentity();
     gluPerspective(60.0f, 800.0f / 600.0f, 0.1f, 100.0f);
     glMatrixMode(GL_MODELVIEW);
+    
+    // Carregar textura de fundo
+    glEnable(GL_TEXTURE_2D);
+    texturaFundo = carregarTextura("dartboard.jpg");
+    
+    // carregando textura do botÃ£o
+    //texturaBotaoJogar = carregarTextura(".png");
+
 }
 
-// --- Definir callback que faltava para movimentação da mira ---
+// --- Definir callback que faltava para movimentaÃ§Ã£o da mira ---
 void mouseMotion(int x, int y) {
     int w = glutGet(GLUT_WINDOW_WIDTH);
     int h = glutGet(GLUT_WINDOW_HEIGHT);
@@ -419,7 +476,7 @@ void mouseMotion(int x, int y) {
     glutPostRedisplay();
 }
 
-// --- melhor exibição de estatísticas no jogo ---
+// --- melhor exibi??o de estat?sticas no jogo ---
 static void drawHUD(){
     // mostra placar e lances restantes
     glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
@@ -460,5 +517,6 @@ int main(int argc, char** argv) {
     glutTimerFunc(0, atualizar, 0);
 
     glutMainLoop();
+
     return 0;
 }
