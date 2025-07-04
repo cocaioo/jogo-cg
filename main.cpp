@@ -7,6 +7,94 @@
 #include <string>
 #include <sstream>
 
+// Definicoes necessarias para OpenGL
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
+
+// biblioteca para carregamento de imagens
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+
+
+// variavel para textura do fundo
+GLuint texturaFundo;
+
+// variavel para textura do botao
+//GLuint texturaBotaoJogar;
+
+// textura para fundo do jogo
+GLuint texturaFundoJogo;
+
+// funcao para carregar textura (versao compativel)
+GLuint carregarTextura(const char* caminho) {
+    std::cout << "Tentando carregar textura: " << caminho << std::endl;
+    int largura, altura, canais;
+    unsigned char* imagem = stbi_load(caminho, &largura, &altura, &canais, 0);
+    if (!imagem) {
+        std::cerr << "Erro ao carregar imagem: " << caminho << std::endl;
+        std::cerr << "Motivo: " << stbi_failure_reason() << std::endl;
+        return 0; // Retorna 0 em vez de sair do programa
+    }
+
+    std::cout << "Imagem carregada com sucesso: " << largura << "x" << altura << " canais: " << canais << std::endl;
+
+    GLuint texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
+    
+    // Usar RGB sempre para compatibilidade
+    GLenum formato = GL_RGB;
+    if (canais == 4) formato = GL_RGBA;
+
+    glTexImage2D(GL_TEXTURE_2D, 0, formato, largura, altura, 0, formato, GL_UNSIGNED_BYTE, imagem);
+    
+    // Usar constantes basicas do OpenGL 1.1
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    stbi_image_free(imagem);
+    std::cout << "Textura criada com ID: " << texID << std::endl;
+    return texID;
+}
+
+// funcao para desenhar o fundo do jogo
+void desenharFundoJogo() {
+    // Verificar se a textura foi carregada corretamente
+    if (texturaFundoJogo == 0) return;
+    
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    gluOrtho2D(0, 800, 0, 600);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, texturaFundoJogo);
+    glColor3f(1.0f, 1.0f, 1.0f); // cor branca para nao alterar a textura
+
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(800.0f, 0.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(800.0f, 600.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 600.0f);
+    glEnd();
+
+    glDisable(GL_TEXTURE_2D);
+
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glEnable(GL_DEPTH_TEST);
+}
+
+
+
 // Constantes do alvo
 const float RAIO_EXTERNO = 1.0f;
 const float DISTANCIA_ALVO = 10.0f;
@@ -21,11 +109,11 @@ float pos_final[3] = {0.0f, 0.0f, DISTANCIA_ALVO};
 float passo_animacao = 0.0f;
 bool lancando = false;
 
-// Braço
+// Braco
 float angulo_braco = 0.0f;
 bool animando_lancamento = false;
 
-// Medidor de precisão
+// Medidor de precisao
 bool oscilando = true;
 float posicao_medidor = 0.0f;  // Varia de -1 a 1
 float precisao = 1.0f;         // De 0 a 1
@@ -36,7 +124,7 @@ const float GRAVIDADE = 2.0f;
 enum State { MENU, GAME, FINAL };
 static State state = MENU;
 static int mode = 1;   // 1=1v1,2=2v2
-// estatísticas
+// estatisticas
 struct Jogador { 
     std::string nome; 
     int pontos, bull, lances; 
@@ -46,21 +134,37 @@ static std::vector<Jogador> jogadores;
 static int atual=0, rodada=1;
 const int MAX_LANCES = 5;
  
-// --- Adicione no topo, após as flags existentes ---
-static bool resetando = false;  // controla animação de retorno da mão
+// --- Adicione no topo, apos as flags existentes ---
+static bool resetando = false;  // controla animacao de retorno da mao
 
-// função auxiliar para texto 2D em pixels
-static void drawText2D(int x, int y, const char *s) {
+// funcao auxiliar para texto 2D em pixels
+static void drawText2D(int x, int y, const char *s, void *fonte = GLUT_BITMAP_HELVETICA_18) {
     glRasterPos2i(x, y);
-    while (*s) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *s++);
+    while (*s) glutBitmapCharacter(fonte, *s++);
 }
-// protótipo para função de HUD (deve vir antes de display)
+// prototipo para funcao de HUD (deve vir antes de display)
 static void drawHUD();
 
 void desenharAlvo() {
     glPushMatrix();
     glTranslatef(0.0f, 0.0f, DISTANCIA_ALVO);
 
+	// aumentando o tamanho do alvo
+	 glScalef(1.5f, 1.5f, 1.0f);
+	
+    // Fundo solido atras do alvo (plano circular)
+    glColor3f(0.1f, 0.1f, 0.1f);  // Cor escura opaca
+    glBegin(GL_TRIANGLE_FAN);
+        glVertex3f(0.0f, 0.0f, -0.01f);  // Centro (ligeiramente atras do plano Z = 0 do alvo)
+        for (int i = 0; i <= 100; i++) {
+            float angle = 2.0f * 3.14159f * i / 100;
+            float x = cos(angle) * RAIO_EXTERNO * 1.05f;
+            float y = sin(angle) * RAIO_EXTERNO * 1.05f;
+            glVertex3f(x, y, -0.01f);  // Fundo levemente atras
+        }
+    glEnd();
+
+    // Alvo (em cima do fundo)
     glColor3f(1.0f, 0.0f, 0.0f);
     glutSolidTorus(0.05f, RAIO_EXTERNO, 20, 20);
 
@@ -76,6 +180,7 @@ void desenharAlvo() {
     glPopMatrix();
 }
 
+
 void desenharMira() {
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
@@ -90,7 +195,7 @@ void desenharMira() {
     glLineWidth(2.0f);
     glColor3f(0.0f, 1.0f, 0.0f);
 
-    // Círculo central
+    // Circulo central
     float radius = 0.03f;
     glBegin(GL_LINE_LOOP);
     for (int i = 0; i < 32; i++) {
@@ -117,7 +222,7 @@ void desenharMira() {
 }
 
 void desenharMedidor() {
-    glMatrixMode(GL_PROJECTION);
+	glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
     gluOrtho2D(-1.0, 1.0, -1.0, 1.0);
@@ -127,29 +232,44 @@ void desenharMedidor() {
 
     glDisable(GL_DEPTH_TEST);
 
-    // Caixa de fundo
-    glColor3f(0.2f, 0.2f, 0.2f);
+    // Barra com degrade vertical (vermelho -> amarelo -> verde)
+    float top = 0.8f;
+    float bottom = -0.8f;
+    float left = -0.95f;
+    float right = -0.85f;
+
     glBegin(GL_QUADS);
-    glVertex2f(-0.95f, -0.8f);
-    glVertex2f(-0.85f, -0.8f);
-    glVertex2f(-0.85f, 0.8f);
-    glVertex2f(-0.95f, 0.8f);
+        glColor3f(1.0f, 0.0f, 0.0f);  // Vermelho no topo
+        glVertex2f(left, top);
+        glVertex2f(right, top);
+
+        glColor3f(1.0f, 1.0f, 0.0f);  // Amarelo no meio
+        glVertex2f(right, 0.0f);
+        glVertex2f(left, 0.0f);
+
+        glColor3f(1.0f, 1.0f, 0.0f);  // Amarelo no meio
+        glVertex2f(left, 0.0f);
+        glVertex2f(right, 0.0f);
+
+        glColor3f(0.0f, 1.0f, 0.0f);  // Verde na base
+        glVertex2f(right, bottom);
+        glVertex2f(left, bottom);
     glEnd();
 
     // Linha central da barra
     glColor3f(0.6f, 0.6f, 0.6f);
     glBegin(GL_LINES);
-    glVertex2f(-0.9f, -0.8f);
-    glVertex2f(-0.9f, 0.8f);
+        glVertex2f((left + right) / 2.0f, bottom);
+        glVertex2f((left + right) / 2.0f, top);
     glEnd();
 
-    // Ponteiro
-    glColor3f(0.0f, 1.0f, 0.0f);
+    // Ponteiro oscilante (triangulo)
+    glColor3f(1.0f, 1.0f, 1.0f);  // Branco para contraste
     float y = posicao_medidor * 0.8f;
     glBegin(GL_TRIANGLES);
-    glVertex2f(-0.96f, y);
-    glVertex2f(-0.84f, y + 0.03f);
-    glVertex2f(-0.84f, y - 0.03f);
+        glVertex2f(left - 0.01f, y);
+        glVertex2f(right + 0.01f, y + 0.03f);
+        glVertex2f(right + 0.01f, y - 0.03f);
     glEnd();
 
     glEnable(GL_DEPTH_TEST);
@@ -160,16 +280,17 @@ void desenharMedidor() {
     glMatrixMode(GL_MODELVIEW);
 }
 
+
 void desenharMaoEDardo() {
     glPushMatrix();
     glTranslatef(-1.0f, -1.0f, 2.0f);
     glRotatef(angulo_braco, 0, 0, 1);
 
-    // Braço
+    // Braco
     glColor3f(0.8f,0.6f,0.4f);
     glPushMatrix(); glScalef(0.2f,1.0f,0.2f); glutSolidCube(1.0f); glPopMatrix();
 
-    // Mão (esfera)
+    // Mao (esfera)
     glPushMatrix(); glTranslatef(0.0f,0.5f,0.0f);
       glColor3f(0.8f,0.6f,0.4f); glutSolidSphere(0.15f,20,20);
 
@@ -183,7 +304,7 @@ void desenharMaoEDardo() {
           glPopMatrix();
       }
 
-      // Dardo na mão (se não iniciado)
+      // Dardo na mao (se nao iniciado)
       if (!lancando && !animando_lancamento) {
           glColor3f(0.0f,0.0f,1.0f);
           glPushMatrix();
@@ -233,11 +354,26 @@ void display() {
         gluOrtho2D(0, 800, 0, 600);
         glMatrixMode(GL_MODELVIEW);  glPushMatrix(); glLoadIdentity();
         glDisable(GL_DEPTH_TEST);
+        
+        // desenhando um retangulo com a textura de fundo
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, texturaFundo);
+        glColor3f(1.0f, 1.0f, 1.0f); // cor branca para nao alterar a textura
 
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(800.0f, 0.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(800.0f, 600.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 600.0f);
+        glEnd();
+
+        glDisable(GL_TEXTURE_2D);
+
+        // Textos do menu
         glColor3f(1,1,1);
-        drawText2D(300, 400, "Jogo de Dardos 3D");
-        drawText2D(300, 350, "1 - Jogo 1v1 (2 jogadores)");
-        drawText2D(300, 320, "2 - Singleplayer (treino)");
+        drawText2D(300, 400, "Jogo de Dardos 3D", GLUT_BITMAP_TIMES_ROMAN_24);
+        drawText2D(300, 350, "1 - Jogo 1v1 (2 jogadores)", GLUT_BITMAP_TIMES_ROMAN_24);
+        drawText2D(300, 320, "2 - Singleplayer (treino)", GLUT_BITMAP_TIMES_ROMAN_24);
 
         glEnable(GL_DEPTH_TEST);
         glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
@@ -246,7 +382,7 @@ void display() {
     }
 
     if(state==FINAL){
-        // tela de estatísticas finais
+        // tela de estatasticas finais
         glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
         gluOrtho2D(0,800,0,600);
         glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
@@ -269,7 +405,10 @@ void display() {
         return;
     }
 
-    // --- código existente do jogo ---
+    // --- codigo existente do jogo ---
+    // Desenhar fundo do jogo
+    desenharFundoJogo();
+    
     drawHUD();
     glLoadIdentity();
     gluLookAt(0,0,0, 0,0,1, 0,1,0);
@@ -312,7 +451,7 @@ void keyboard(unsigned char key, int x, int y) {
         oscilando = false;
         animando_lancamento = true;
         precisao = 1.0f - fabs(posicao_medidor);
-        std::cout << "Precisão capturada: " << precisao * 100 << "%" << std::endl;
+        std::cout << "Precisao capturada: " << precisao * 100 << "%" << std::endl;
     } else if (key == 'r') {
         animando_lancamento = lancando = resetando = false;
         oscilando = true;
@@ -324,12 +463,12 @@ void keyboard(unsigned char key, int x, int y) {
 }
 
 void atualizar(int value) {
-    // oscilação do medidor
+    // oscilacao do medidor
     if (oscilando) {
         posicao_medidor = sin(glutGet(GLUT_ELAPSED_TIME) * 0.005f);
     }
 
-    // animação do braço subindo
+    // animacao do braco subindo
     if (animando_lancamento) {
         angulo_braco += 5.0f;
         if (angulo_braco >= 90.0f) {
@@ -338,7 +477,7 @@ void atualizar(int value) {
             lancando = true;
             passo_animacao = 0.0f;
 
-            // cálcula dispersão conforme precisão
+            // calcula dispersao conforme precisao
             float scatter = (1.0f - precisao) * RAIO_EXTERNO;
             float offX = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * scatter;
             float offY = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * scatter;
@@ -347,20 +486,20 @@ void atualizar(int value) {
             pos_final[2] = DISTANCIA_ALVO;
         }
     }
-    // animação do dardo voando
+    // animacao do dardo voando
     else if (lancando) {
         passo_animacao += 0.02f;
         if (passo_animacao >= 1.0f) {
             passo_animacao = 1.0f;
             lancando = false;
-            resetando = true;           // inicia reset da mão e medidor
+            resetando = true;           // inicia reset da mao e medidor
         }
         float t = passo_animacao;
         pos_dardo[0] = pos_final[0] * t;
         pos_dardo[1] = pos_final[1] * t - 0.5f * GRAVIDADE * t * t;
         pos_dardo[2] = DISTANCIA_ALVO * t;
     }
-    // reset: desce o braço e reinicia o medidor
+    // reset: desce o braco e reinicia o medidor
     else if (resetando) {
         angulo_braco -= 2.0f;
         if (angulo_braco <= 0.0f) {
@@ -370,7 +509,7 @@ void atualizar(int value) {
             passo_animacao  = 0.0f;
             posicao_medidor = 0.0f;
 
-            // cálculo de pontos exemplo
+            // calculo de pontos exemplo
             Jogador &J = jogadores[atual];
             float dist = sqrt(pos_dardo[0]*pos_dardo[0] +
                               pos_dardo[1]*pos_dardo[1]);
@@ -386,7 +525,7 @@ void atualizar(int value) {
             J.lances   += 1;
             J.somaPrec += precisao * 100.0f;
 
-            // avança jogador/rodada
+            // avanca jogador/rodada
             atual++;
             if (atual >= (int)jogadores.size()) {
                 atual = 0;
@@ -408,9 +547,22 @@ void init() {
     glLoadIdentity();
     gluPerspective(60.0f, 800.0f / 600.0f, 0.1f, 100.0f);
     glMatrixMode(GL_MODELVIEW);
+    
+    // corrigindo o erro das imagens de cabeca para baixo
+	stbi_set_flip_vertically_on_load(true);
+    
+    // Carregar texturas
+    std::cout << "Carregando texturas..." << std::endl;
+    texturaFundoJogo = carregarTextura("imagem-de-fundo-jogo.jpg");
+    
+    // Carregar textura de fundo do menu inicial
+    glEnable(GL_TEXTURE_2D);
+    texturaFundo = carregarTextura("dartboard.jpg");
+    
+    std::cout << "InicializaÃ§Ã£o completa." << std::endl;
 }
 
-// --- Definir callback que faltava para movimentação da mira ---
+// --- Definir callback que faltava para movimentacao da mira ---
 void mouseMotion(int x, int y) {
     int w = glutGet(GLUT_WINDOW_WIDTH);
     int h = glutGet(GLUT_WINDOW_HEIGHT);
@@ -419,7 +571,7 @@ void mouseMotion(int x, int y) {
     glutPostRedisplay();
 }
 
-// --- melhor exibição de estatísticas no jogo ---
+// --- melhor exibicao de estatasticas no jogo ---
 static void drawHUD(){
     // mostra placar e lances restantes
     glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
@@ -460,5 +612,6 @@ int main(int argc, char** argv) {
     glutTimerFunc(0, atualizar, 0);
 
     glutMainLoop();
+
     return 0;
 }
