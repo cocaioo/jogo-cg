@@ -16,16 +16,59 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-
-
 // variavel para textura do fundo
 GLuint texturaFundo;
 
-// variavel para textura do botao
-//GLuint texturaBotaoJogar;
-
 // textura para fundo do jogo
 GLuint texturaFundoJogo;
+
+// Variáveis para animação do GIF no menu
+static std::vector<GLuint> texturaFrames;
+static int frameAtual = 0;
+static int totalFrames = 70; // Ajuste para o número real de frames extraídos
+
+// Constantes do alvo
+const float RAIO_EXTERNO = 1.0f;
+const float DISTANCIA_ALVO = 10.0f;
+
+// Mira
+float mira_x = 0.0f;
+float mira_y = 0.0f;
+
+// Dardo
+float pos_dardo[3] = {0.0f, 0.0f, 0.0f};
+float pos_final[3] = {0.0f, 0.0f, DISTANCIA_ALVO};
+float passo_animacao = 0.0f;
+bool lancando = false;
+
+// Braco
+float angulo_braco = 0.0f;
+bool animando_lancamento = false;
+
+// Medidor de precisao
+bool oscilando = true;
+float posicao_medidor = 0.0f;  // Varia de -1 a 1
+float precisao = 1.0f;         // De 0 a 1
+
+// Gravidade ajustada
+const float GRAVIDADE = 2.0f;
+
+enum State { MENU, GAME, FINAL };
+static State state = MENU;
+static int mode = 1;   // 1=1v1,2=2v2
+
+// estatisticas
+struct Jogador { 
+    std::string nome; 
+    int pontos, bull, lances; 
+    float somaPrec;
+};
+static std::vector<Jogador> jogadores;
+static int atual=0, rodada=1;
+const int MAX_LANCES = 5;
+
+// --- Adicione no topo, apos as flags existentes ---
+static bool resetando = false;  // controla animacao de retorno da mao
 
 // funcao para carregar textura (versao compativel)
 GLuint carregarTextura(const char* caminho) {
@@ -59,7 +102,14 @@ GLuint carregarTextura(const char* caminho) {
     return texID;
 }
 
-// funcao para desenhar o fundo do jogo
+// funcao auxiliar para texto 2D em pixels
+static void drawText2D(int x, int y, const char *s, void *fonte = GLUT_BITMAP_HELVETICA_18) {
+    glRasterPos2i(x, y);
+    while (*s) glutBitmapCharacter(fonte, *s++);
+}
+// prototipo para funcao de HUD (deve vir antes de display)
+static void drawHUD();
+
 void desenharFundoJogo() {
     // Verificar se a textura foi carregada corretamente
     if (texturaFundoJogo == 0) return;
@@ -93,65 +143,13 @@ void desenharFundoJogo() {
     glEnable(GL_DEPTH_TEST);
 }
 
-
-
-// Constantes do alvo
-const float RAIO_EXTERNO = 1.0f;
-const float DISTANCIA_ALVO = 10.0f;
-
-// Mira
-float mira_x = 0.0f;
-float mira_y = 0.0f;
-
-// Dardo
-float pos_dardo[3] = {0.0f, 0.0f, 0.0f};
-float pos_final[3] = {0.0f, 0.0f, DISTANCIA_ALVO};
-float passo_animacao = 0.0f;
-bool lancando = false;
-
-// Braco
-float angulo_braco = 0.0f;
-bool animando_lancamento = false;
-
-// Medidor de precisao
-bool oscilando = true;
-float posicao_medidor = 0.0f;  // Varia de -1 a 1
-float precisao = 1.0f;         // De 0 a 1
-
-// Gravidade ajustada
-const float GRAVIDADE = 2.0f;
-
-enum State { MENU, GAME, FINAL };
-static State state = MENU;
-static int mode = 1;   // 1=1v1,2=2v2
-// estatisticas
-struct Jogador { 
-    std::string nome; 
-    int pontos, bull, lances; 
-    float somaPrec;
-};
-static std::vector<Jogador> jogadores;
-static int atual=0, rodada=1;
-const int MAX_LANCES = 5;
- 
-// --- Adicione no topo, apos as flags existentes ---
-static bool resetando = false;  // controla animacao de retorno da mao
-
-// funcao auxiliar para texto 2D em pixels
-static void drawText2D(int x, int y, const char *s, void *fonte = GLUT_BITMAP_HELVETICA_18) {
-    glRasterPos2i(x, y);
-    while (*s) glutBitmapCharacter(fonte, *s++);
-}
-// prototipo para funcao de HUD (deve vir antes de display)
-static void drawHUD();
-
 void desenharAlvo() {
     glPushMatrix();
     glTranslatef(0.0f, 0.0f, DISTANCIA_ALVO);
 
-	// aumentando o tamanho do alvo
-	 glScalef(1.5f, 1.5f, 1.0f);
-	
+    // aumentando o tamanho do alvo
+    glScalef(1.5f, 1.5f, 1.0f);
+    
     // Fundo solido atras do alvo (plano circular)
     glColor3f(0.1f, 0.1f, 0.1f);  // Cor escura opaca
     glBegin(GL_TRIANGLE_FAN);
@@ -179,7 +177,6 @@ void desenharAlvo() {
 
     glPopMatrix();
 }
-
 
 void desenharMira() {
     glMatrixMode(GL_PROJECTION);
@@ -222,7 +219,7 @@ void desenharMira() {
 }
 
 void desenharMedidor() {
-	glMatrixMode(GL_PROJECTION);
+    glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
     gluOrtho2D(-1.0, 1.0, -1.0, 1.0);
@@ -279,7 +276,6 @@ void desenharMedidor() {
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
 }
-
 
 void desenharMaoEDardo() {
     glPushMatrix();
@@ -354,26 +350,45 @@ void display() {
         gluOrtho2D(0, 800, 0, 600);
         glMatrixMode(GL_MODELVIEW);  glPushMatrix(); glLoadIdentity();
         glDisable(GL_DEPTH_TEST);
-        
-        // desenhando um retangulo com a textura de fundo
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, texturaFundo);
-        glColor3f(1.0f, 1.0f, 1.0f); // cor branca para nao alterar a textura
 
+        // Desenhar frame atual do GIF animado
+        if (!texturaFrames.empty()) {
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, texturaFrames[frameAtual]);
+            glColor3f(1.0f, 1.0f, 1.0f);
+
+            glBegin(GL_QUADS);
+            glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
+            glTexCoord2f(1.0f, 0.0f); glVertex2f(800.0f, 0.0f);
+            glTexCoord2f(1.0f, 1.0f); glVertex2f(800.0f, 600.0f);
+            glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 600.0f);
+            glEnd();
+
+            glDisable(GL_TEXTURE_2D);
+        }
+
+        // Desenhar retângulos de fundo para os botões (contraste)
+        glColor3f(0.0f, 0.0f, 0.5f); // Azul escuro para o botão 1
         glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(800.0f, 0.0f);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(800.0f, 600.0f);
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 600.0f);
+            glVertex2f(290, 345);
+            glVertex2f(600, 345);
+            glVertex2f(600, 375);
+            glVertex2f(290, 375);
         glEnd();
 
-        glDisable(GL_TEXTURE_2D);
+        glColor3f(0.0f, 0.0f, 0.5f); // Azul escuro para o botão 2
+        glBegin(GL_QUADS);
+            glVertex2f(290, 315);
+            glVertex2f(600, 315);
+            glVertex2f(600, 345);
+            glVertex2f(290, 345);
+        glEnd();
 
         // Textos do menu
         glColor3f(1,1,1);
+        drawText2D(300, 360, "1 - Jogo 1v1 (2 jogadores)", GLUT_BITMAP_TIMES_ROMAN_24);
+        drawText2D(300, 330, "2 - Singleplayer (treino)", GLUT_BITMAP_TIMES_ROMAN_24);
         drawText2D(300, 400, "Jogo de Dardos 3D", GLUT_BITMAP_TIMES_ROMAN_24);
-        drawText2D(300, 350, "1 - Jogo 1v1 (2 jogadores)", GLUT_BITMAP_TIMES_ROMAN_24);
-        drawText2D(300, 320, "2 - Singleplayer (treino)", GLUT_BITMAP_TIMES_ROMAN_24);
 
         glEnable(GL_DEPTH_TEST);
         glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
@@ -535,6 +550,11 @@ void atualizar(int value) {
         }
     }
 
+    // Atualiza frame do GIF animado no menu
+    if (state == MENU && !texturaFrames.empty()) {
+        frameAtual = (frameAtual + 1) % (int)texturaFrames.size();
+    }
+
     glutPostRedisplay();
     glutTimerFunc(16, atualizar, 0);
 }
@@ -548,18 +568,24 @@ void init() {
     gluPerspective(60.0f, 800.0f / 600.0f, 0.1f, 100.0f);
     glMatrixMode(GL_MODELVIEW);
     
-    // corrigindo o erro das imagens de cabeca para baixo
-	stbi_set_flip_vertically_on_load(true);
-    
-    // Carregar texturas
+    stbi_set_flip_vertically_on_load(true);
+
     std::cout << "Carregando texturas..." << std::endl;
     texturaFundoJogo = carregarTextura("imagem-de-fundo-jogo.jpg");
-    
-    // Carregar textura de fundo do menu inicial
-    glEnable(GL_TEXTURE_2D);
-    texturaFundo = carregarTextura("dartboard.jpg");
-    
-    std::cout << "InicializaÃ§Ã£o completa." << std::endl;
+
+    // Carregar frames do GIF animado para o menu
+    for (int i = 0; i < totalFrames; ++i) {  
+    char filename[64];  
+    sprintf(filename, "frames/frame-%d.png", i);  // sem zeros à esquerda  
+    GLuint tex = carregarTextura(filename);  
+    if (tex != 0) {  
+        texturaFrames.push_back(tex);  
+    } else {  
+        std::cerr << "Falha ao carregar frame: " << filename << std::endl;  
+    }  
+}
+
+    std::cout << "Inicialização completa." << std::endl;
 }
 
 // --- Definir callback que faltava para movimentacao da mira ---
