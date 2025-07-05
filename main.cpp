@@ -107,6 +107,36 @@ static void drawText2D(int x, int y, const char *s, void *fonte = GLUT_BITMAP_HE
     glRasterPos2i(x, y);
     while (*s) glutBitmapCharacter(fonte, *s++);
 }
+
+// Função auxiliar para desenhar retângulos arredondados simples
+void drawRoundedRect(float x, float y, float width, float height, float radius) {
+    int segments = 20;
+    glBegin(GL_TRIANGLE_FAN);
+    // Centro
+    glVertex2f(x + width/2, y + height/2);
+    // Canto superior direito
+    for (int i = 0; i <= segments; i++) {
+        float angle = (float)i / segments * 3.14159f / 2;
+        glVertex2f(x + width - radius + cos(angle) * radius, y + height - radius + sin(angle) * radius);
+    }
+    // Canto superior esquerdo
+    for (int i = 0; i <= segments; i++) {
+        float angle = 3.14159f / 2 + (float)i / segments * 3.14159f / 2;
+        glVertex2f(x + radius + cos(angle) * radius, y + height - radius + sin(angle) * radius);
+    }
+    // Canto inferior esquerdo
+    for (int i = 0; i <= segments; i++) {
+        float angle = 3.14159f + (float)i / segments * 3.14159f / 2;
+        glVertex2f(x + radius + cos(angle) * radius, y + radius + sin(angle) * radius);
+    }
+    // Canto inferior direito
+    for (int i = 0; i <= segments; i++) {
+        float angle = 3.14159f * 3 / 2 + (float)i / segments * 3.14159f / 2;
+        glVertex2f(x + width - radius + cos(angle) * radius, y + radius + sin(angle) * radius);
+    }
+    glEnd();
+}
+
 // prototipo para funcao de HUD (deve vir antes de display)
 static void drawHUD();
 
@@ -345,56 +375,95 @@ void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (state == MENU) {
-        // setup ortho 2D
-        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
-        gluOrtho2D(0, 800, 0, 600);
-        glMatrixMode(GL_MODELVIEW);  glPushMatrix(); glLoadIdentity();
-        glDisable(GL_DEPTH_TEST);
+    // setup ortho 2D
+    glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
+    gluOrtho2D(0, 800, 0, 600);
+    glMatrixMode(GL_MODELVIEW);  glPushMatrix(); glLoadIdentity();
+    glDisable(GL_DEPTH_TEST);
 
-        // Desenhar frame atual do GIF animado
-        if (!texturaFrames.empty()) {
-            glEnable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, texturaFrames[frameAtual]);
-            glColor3f(1.0f, 1.0f, 1.0f);
+    // Desenhar frame atual do GIF animado
+    if (!texturaFrames.empty()) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, texturaFrames[frameAtual]);
+        glColor3f(1.0f, 1.0f, 1.0f);
 
-            glBegin(GL_QUADS);
-            glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
-            glTexCoord2f(1.0f, 0.0f); glVertex2f(800.0f, 0.0f);
-            glTexCoord2f(1.0f, 1.0f); glVertex2f(800.0f, 600.0f);
-            glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 600.0f);
-            glEnd();
-
-            glDisable(GL_TEXTURE_2D);
-        }
-
-        // Desenhar retângulos de fundo para os botões (contraste)
-        glColor3f(0.0f, 0.0f, 0.5f); // Azul escuro para o botão 1
         glBegin(GL_QUADS);
-            glVertex2f(290, 345);
-            glVertex2f(600, 345);
-            glVertex2f(600, 375);
-            glVertex2f(290, 375);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(800.0f, 0.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(800.0f, 600.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 600.0f);
         glEnd();
 
-        glColor3f(0.0f, 0.0f, 0.5f); // Azul escuro para o botão 2
-        glBegin(GL_QUADS);
-            glVertex2f(290, 315);
-            glVertex2f(600, 315);
-            glVertex2f(600, 345);
-            glVertex2f(290, 345);
-        glEnd();
-
-        // Textos do menu
-        glColor3f(1,1,1);
-        drawText2D(300, 360, "1 - Jogo 1v1 (2 jogadores)", GLUT_BITMAP_TIMES_ROMAN_24);
-        drawText2D(300, 330, "2 - Singleplayer (treino)", GLUT_BITMAP_TIMES_ROMAN_24);
-        drawText2D(300, 400, "Jogo de Dardos 3D", GLUT_BITMAP_TIMES_ROMAN_24);
-
-        glEnable(GL_DEPTH_TEST);
-        glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
-        glutSwapBuffers();
-        return;
+        glDisable(GL_TEXTURE_2D);
     }
+
+    // Fundo semi-transparente escuro para destacar o menu
+    glColor4f(0.05f, 0.05f, 0.1f, 0.85f);
+    glBegin(GL_QUADS);
+        glVertex2f(150, 150);
+        glVertex2f(650, 150);
+        glVertex2f(650, 450);
+        glVertex2f(150, 450);
+    glEnd();
+
+    // Título centralizado no topo do menu
+    glColor3f(0.9f, 0.9f, 0.9f);
+    void *titleFont = GLUT_BITMAP_TIMES_ROMAN_24;
+    const char* titleText = "Jogo de Dardos 3D";
+    int titleWidth = (int)strlen(titleText) * 12;
+    drawText2D(400 - titleWidth / 2, 420, titleText, titleFont);
+
+    // Botões centralizados verticalmente e horizontalmente
+    const int buttonWidth = 320;
+    const int buttonHeight = 50;
+    const int buttonX = 400 - buttonWidth / 2;
+    int buttonY[2] = { 340, 270 };
+
+    for (int i = 0; i < 2; ++i) {
+        // Botão com gradiente azul escuro para azul médio
+        glBegin(GL_QUADS);
+            glColor3f(0.15f, 0.25f, 0.45f); // topo do botão
+            glVertex2f(buttonX, buttonY[i] + buttonHeight);
+            glVertex2f(buttonX + buttonWidth, buttonY[i] + buttonHeight);
+            glColor3f(0.05f, 0.15f, 0.35f); // base do botão
+            glVertex2f(buttonX + buttonWidth, buttonY[i]);
+            glVertex2f(buttonX, buttonY[i]);
+        glEnd();
+
+        // Borda branca fina
+        glColor3f(1, 1, 1);
+        glLineWidth(2.0f);
+        glBegin(GL_LINE_LOOP);
+            glVertex2f(buttonX, buttonY[i]);
+            glVertex2f(buttonX + buttonWidth, buttonY[i]);
+            glVertex2f(buttonX + buttonWidth, buttonY[i] + buttonHeight);
+            glVertex2f(buttonX, buttonY[i] + buttonHeight);
+        glEnd();
+    }
+
+    // Texto dos botões em branco, centralizado dentro dos botões
+    glColor3f(1, 1, 1);
+    void *buttonFont = GLUT_BITMAP_HELVETICA_18;
+    const char* buttonTexts[2] = { "1 - Jogo 1v1 (2 jogadores)", "2 - Singleplayer (treino)" };
+    for (int i = 0; i < 2; ++i) {
+        int textWidth = (int)strlen(buttonTexts[i]) * 9;
+        int textX = 400 - textWidth / 2;
+        int textY = buttonY[i] + buttonHeight / 2 + 6; // +6 para ajustar verticalmente
+        drawText2D(textX, textY, buttonTexts[i], buttonFont);
+    }
+
+    // Créditos no rodapé do menu, centralizado
+    glColor3f(0.7f, 0.7f, 0.7f);
+    void *creditFont = GLUT_BITMAP_HELVETICA_12;
+    const char* creditText = "Caio Victor Ferreira do Nascimento e Samuel Furtado Fortes";
+    int creditWidth = (int)strlen(creditText) * 9;
+    drawText2D(400 - creditWidth / 2, 120, creditText, creditFont);
+
+    glEnable(GL_DEPTH_TEST);
+    glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
+    glutSwapBuffers();
+    return;
+}
 
     if(state==FINAL){
         // tela de estatasticas finais
@@ -575,15 +644,15 @@ void init() {
 
     // Carregar frames do GIF animado para o menu
     for (int i = 0; i < totalFrames; ++i) {  
-    char filename[64];  
-    sprintf(filename, "frames/frame-%d.png", i);  // sem zeros à esquerda  
-    GLuint tex = carregarTextura(filename);  
-    if (tex != 0) {  
-        texturaFrames.push_back(tex);  
-    } else {  
-        std::cerr << "Falha ao carregar frame: " << filename << std::endl;  
-    }  
-}
+        char filename[64];  
+        sprintf(filename, "frames/frame-%d.png", i);  // sem zeros à esquerda  
+        GLuint tex = carregarTextura(filename);  
+        if (tex != 0) {  
+            texturaFrames.push_back(tex);  
+        } else {  
+            std::cerr << "Falha ao carregar frame: " << filename << std::endl;  
+        }  
+    }
 
     std::cout << "Inicialização completa." << std::endl;
 }
