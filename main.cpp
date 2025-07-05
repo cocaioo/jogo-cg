@@ -7,70 +7,16 @@
 #include <string>
 #include <sstream>
 
-// Definicoes necessarias para OpenGL
 #ifndef GL_CLAMP_TO_EDGE
 #define GL_CLAMP_TO_EDGE 0x812F
 #endif
 
-// biblioteca para carregamento de imagens
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-// variavel para textura do fundo
 GLuint texturaFundo;
-
-// textura para fundo do jogo
 GLuint texturaFundoJogo;
 
-// Variáveis para animação do GIF no menu
-static std::vector<GLuint> texturaFrames;
-static int frameAtual = 0;
-static int totalFrames = 70; // Ajuste para o número real de frames extraídos
-
-// Constantes do alvo
-const float RAIO_EXTERNO = 1.0f;
-const float DISTANCIA_ALVO = 10.0f;
-
-// Mira
-float mira_x = 0.0f;
-float mira_y = 0.0f;
-
-// Dardo
-float pos_dardo[3] = {0.0f, 0.0f, 0.0f};
-float pos_final[3] = {0.0f, 0.0f, DISTANCIA_ALVO};
-float passo_animacao = 0.0f;
-bool lancando = false;
-
-// Braco
-float angulo_braco = 0.0f;
-bool animando_lancamento = false;
-
-// Medidor de precisao
-bool oscilando = true;
-float posicao_medidor = 0.0f;  // Varia de -1 a 1
-float precisao = 1.0f;         // De 0 a 1
-
-// Gravidade ajustada
-const float GRAVIDADE = 2.0f;
-
-enum State { MENU, GAME, FINAL };
-static State state = MENU;
-static int mode = 1;   // 1=1v1,2=2v2
-
-// estatisticas
-struct Jogador { 
-    std::string nome; 
-    int pontos, bull, lances; 
-    float somaPrec;
-};
-static std::vector<Jogador> jogadores;
-static int atual=0, rodada=1;
-const int MAX_LANCES = 5;
-
-// --- Adicione no topo, apos as flags existentes ---
-static bool resetando = false;  // controla animacao de retorno da mao
-
-// funcao para carregar textura (versao compativel)
 GLuint carregarTextura(const char* caminho) {
     std::cout << "Tentando carregar textura: " << caminho << std::endl;
     int largura, altura, canais;
@@ -78,7 +24,7 @@ GLuint carregarTextura(const char* caminho) {
     if (!imagem) {
         std::cerr << "Erro ao carregar imagem: " << caminho << std::endl;
         std::cerr << "Motivo: " << stbi_failure_reason() << std::endl;
-        return 0; // Retorna 0 em vez de sair do programa
+        return 0;
     }
 
     std::cout << "Imagem carregada com sucesso: " << largura << "x" << altura << " canais: " << canais << std::endl;
@@ -87,13 +33,11 @@ GLuint carregarTextura(const char* caminho) {
     glGenTextures(1, &texID);
     glBindTexture(GL_TEXTURE_2D, texID);
     
-    // Usar RGB sempre para compatibilidade
     GLenum formato = GL_RGB;
     if (canais == 4) formato = GL_RGBA;
 
     glTexImage2D(GL_TEXTURE_2D, 0, formato, largura, altura, 0, formato, GL_UNSIGNED_BYTE, imagem);
     
-    // Usar constantes basicas do OpenGL 1.1
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -102,46 +46,7 @@ GLuint carregarTextura(const char* caminho) {
     return texID;
 }
 
-// funcao auxiliar para texto 2D em pixels
-static void drawText2D(int x, int y, const char *s, void *fonte = GLUT_BITMAP_HELVETICA_18) {
-    glRasterPos2i(x, y);
-    while (*s) glutBitmapCharacter(fonte, *s++);
-}
-
-// Função auxiliar para desenhar retângulos arredondados simples
-void drawRoundedRect(float x, float y, float width, float height, float radius) {
-    int segments = 20;
-    glBegin(GL_TRIANGLE_FAN);
-    // Centro
-    glVertex2f(x + width/2, y + height/2);
-    // Canto superior direito
-    for (int i = 0; i <= segments; i++) {
-        float angle = (float)i / segments * 3.14159f / 2;
-        glVertex2f(x + width - radius + cos(angle) * radius, y + height - radius + sin(angle) * radius);
-    }
-    // Canto superior esquerdo
-    for (int i = 0; i <= segments; i++) {
-        float angle = 3.14159f / 2 + (float)i / segments * 3.14159f / 2;
-        glVertex2f(x + radius + cos(angle) * radius, y + height - radius + sin(angle) * radius);
-    }
-    // Canto inferior esquerdo
-    for (int i = 0; i <= segments; i++) {
-        float angle = 3.14159f + (float)i / segments * 3.14159f / 2;
-        glVertex2f(x + radius + cos(angle) * radius, y + radius + sin(angle) * radius);
-    }
-    // Canto inferior direito
-    for (int i = 0; i <= segments; i++) {
-        float angle = 3.14159f * 3 / 2 + (float)i / segments * 3.14159f / 2;
-        glVertex2f(x + width - radius + cos(angle) * radius, y + radius + sin(angle) * radius);
-    }
-    glEnd();
-}
-
-// prototipo para funcao de HUD (deve vir antes de display)
-static void drawHUD();
-
 void desenharFundoJogo() {
-    // Verificar se a textura foi carregada corretamente
     if (texturaFundoJogo == 0) return;
     
     glDisable(GL_DEPTH_TEST);
@@ -155,7 +60,7 @@ void desenharFundoJogo() {
 
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, texturaFundoJogo);
-    glColor3f(1.0f, 1.0f, 1.0f); // cor branca para nao alterar a textura
+    glColor3f(1.0f, 1.0f, 1.0f);
 
     glBegin(GL_QUADS);
         glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
@@ -173,26 +78,63 @@ void desenharFundoJogo() {
     glEnable(GL_DEPTH_TEST);
 }
 
+const float RAIO_EXTERNO = 1.0f;
+const float DISTANCIA_ALVO = 10.0f;
+
+float mira_x = 0.0f;
+float mira_y = 0.0f;
+
+float pos_dardo[3] = {0.0f, 0.0f, 0.0f};
+float pos_final[3] = {0.0f, 0.0f, DISTANCIA_ALVO};
+float passo_animacao = 0.0f;
+bool lancando = false;
+
+float angulo_braco = 0.0f;
+bool animando_lancamento = false;
+
+bool oscilando = true;
+float posicao_medidor = 0.0f;
+float precisao = 1.0f;
+
+const float GRAVIDADE = 2.0f;
+
+enum State { MENU, GAME, FINAL };
+static State state = MENU;
+static int mode = 1;
+
+struct Jogador { 
+    std::string nome; 
+    int pontos, bull, lances; 
+    float somaPrec;
+};
+static std::vector<Jogador> jogadores;
+static int atual=0, rodada=1;
+const int MAX_LANCES = 5;
+
+static bool resetando = false;
+
+static void drawText2D(int x, int y, const char *s, void *fonte = GLUT_BITMAP_HELVETICA_18) {
+    glRasterPos2i(x, y);
+    while (*s) glutBitmapCharacter(fonte, *s++);
+}
+static void drawHUD();
+
 void desenharAlvo() {
     glPushMatrix();
     glTranslatef(0.0f, 0.0f, DISTANCIA_ALVO);
-
-    // aumentando o tamanho do alvo
     glScalef(1.5f, 1.5f, 1.0f);
-    
-    // Fundo solido atras do alvo (plano circular)
-    glColor3f(0.1f, 0.1f, 0.1f);  // Cor escura opaca
+	
+    glColor3f(0.1f, 0.1f, 0.1f);
     glBegin(GL_TRIANGLE_FAN);
-        glVertex3f(0.0f, 0.0f, -0.01f);  // Centro (ligeiramente atras do plano Z = 0 do alvo)
+        glVertex3f(0.0f, 0.0f, -0.01f);
         for (int i = 0; i <= 100; i++) {
             float angle = 2.0f * 3.14159f * i / 100;
             float x = cos(angle) * RAIO_EXTERNO * 1.05f;
             float y = sin(angle) * RAIO_EXTERNO * 1.05f;
-            glVertex3f(x, y, -0.01f);  // Fundo levemente atras
+            glVertex3f(x, y, -0.01f);
         }
     glEnd();
 
-    // Alvo (em cima do fundo)
     glColor3f(1.0f, 0.0f, 0.0f);
     glutSolidTorus(0.05f, RAIO_EXTERNO, 20, 20);
 
@@ -222,7 +164,6 @@ void desenharMira() {
     glLineWidth(2.0f);
     glColor3f(0.0f, 1.0f, 0.0f);
 
-    // Circulo central
     float radius = 0.03f;
     glBegin(GL_LINE_LOOP);
     for (int i = 0; i < 32; i++) {
@@ -231,7 +172,6 @@ void desenharMira() {
     }
     glEnd();
 
-    // Linhas verticais e horizontais
     glBegin(GL_LINES);
     glVertex2f(mira_x - 0.05f, mira_y);
     glVertex2f(mira_x + 0.05f, mira_y);
@@ -249,7 +189,7 @@ void desenharMira() {
 }
 
 void desenharMedidor() {
-    glMatrixMode(GL_PROJECTION);
+	glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
     gluOrtho2D(-1.0, 1.0, -1.0, 1.0);
@@ -259,39 +199,36 @@ void desenharMedidor() {
 
     glDisable(GL_DEPTH_TEST);
 
-    // Barra com degrade vertical (vermelho -> amarelo -> verde)
     float top = 0.8f;
     float bottom = -0.8f;
     float left = -0.95f;
     float right = -0.85f;
 
     glBegin(GL_QUADS);
-        glColor3f(1.0f, 0.0f, 0.0f);  // Vermelho no topo
+        glColor3f(1.0f, 0.0f, 0.0f);
         glVertex2f(left, top);
         glVertex2f(right, top);
 
-        glColor3f(1.0f, 1.0f, 0.0f);  // Amarelo no meio
+        glColor3f(1.0f, 1.0f, 0.0f);
         glVertex2f(right, 0.0f);
         glVertex2f(left, 0.0f);
 
-        glColor3f(1.0f, 1.0f, 0.0f);  // Amarelo no meio
+        glColor3f(1.0f, 1.0f, 0.0f);
         glVertex2f(left, 0.0f);
         glVertex2f(right, 0.0f);
 
-        glColor3f(0.0f, 1.0f, 0.0f);  // Verde na base
+        glColor3f(0.0f, 1.0f, 0.0f);
         glVertex2f(right, bottom);
         glVertex2f(left, bottom);
     glEnd();
 
-    // Linha central da barra
     glColor3f(0.6f, 0.6f, 0.6f);
     glBegin(GL_LINES);
         glVertex2f((left + right) / 2.0f, bottom);
         glVertex2f((left + right) / 2.0f, top);
     glEnd();
 
-    // Ponteiro oscilante (triangulo)
-    glColor3f(1.0f, 1.0f, 1.0f);  // Branco para contraste
+    glColor3f(1.0f, 1.0f, 1.0f);
     float y = posicao_medidor * 0.8f;
     glBegin(GL_TRIANGLES);
         glVertex2f(left - 0.01f, y);
@@ -307,65 +244,106 @@ void desenharMedidor() {
     glMatrixMode(GL_MODELVIEW);
 }
 
-void desenharMaoEDardo() {
-    glPushMatrix();
-    glTranslatef(-1.0f, -1.0f, 2.0f);
-    glRotatef(angulo_braco, 0, 0, 1);
-
-    // Braco
-    glColor3f(0.8f,0.6f,0.4f);
-    glPushMatrix(); glScalef(0.2f,1.0f,0.2f); glutSolidCube(1.0f); glPopMatrix();
-
-    // Mao (esfera)
-    glPushMatrix(); glTranslatef(0.0f,0.5f,0.0f);
-      glColor3f(0.8f,0.6f,0.4f); glutSolidSphere(0.15f,20,20);
-
-      // Dedos (caixinhas)
-      for (int i = -1; i <= 1; ++i) {
-          glPushMatrix();
-            glTranslatef(i * 0.04f, 0.62f, 0.05f);
-            glRotatef(-30.0f, 1, 0, 0);
-            glColor3f(0.8f,0.6f,0.4f);
-            glPushMatrix(); glScalef(0.02f,0.12f,0.02f); glutSolidCube(1.0f); glPopMatrix();
-          glPopMatrix();
-      }
-
-      // Dardo na mao (se nao iniciado)
-      if (!lancando && !animando_lancamento) {
-          glColor3f(0.0f,0.0f,1.0f);
-          glPushMatrix();
-            glTranslatef(0.0f,0.2f,0.0f);
-            glScalef(0.05f,0.4f,0.05f);
-            glutSolidCube(1.0f);
-          glPopMatrix();
-          glColor3f(1.0f,0.0f,0.0f);
-          glPushMatrix();
-            glTranslatef(0.0f,0.42f,0.0f);
-            glutSolidCone(0.05f,0.1f,10,2);
-          glPopMatrix();
-      }
-    glPopMatrix();
-    glPopMatrix();
+void desenharMaoMelhorada() {  
+    GLUquadric* quad = gluNewQuadric();  
+  
+    glPushMatrix();  
+    glTranslatef(-1.0f, -1.0f, 2.0f);  
+    glRotatef(angulo_braco, 0, 0, 1);  
+  
+    // Palma da mão - esfera maior  
+    glColor3f(0.8f, 0.6f, 0.4f);  
+    glutSolidSphere(0.15f, 20, 20);  
+  
+    // Dedos - 4 cilindros com esferas nas juntas  
+    float dedoComprimento = 0.2f;  
+    float dedoRaio = 0.03f;  
+    float espacamento = 0.07f;  
+  
+    // Dedos do indicador ao mindinho (da direita para esquerda na mão direita)  
+    for (int i = 2; i >= -1; --i) {  
+        glPushMatrix();  
+        glTranslatef(i * espacamento, 0.1f, 0.0f);  
+        glRotatef(-30.0f, 1, 0, 0);  
+  
+        gluQuadricNormals(quad, GLU_SMOOTH);  
+        gluCylinder(quad, dedoRaio, dedoRaio, dedoComprimento, 12, 3);  
+  
+        glTranslatef(0.0f, 0.0f, dedoComprimento);  
+        glutSolidSphere(dedoRaio * 1.2f, 12, 12);  
+  
+        glPopMatrix();  
+    }  
+  
+    // Polegar - cilindro e esfera à esquerda da palma  
+    glPushMatrix();  
+    glTranslatef(-0.18f, 0.0f, 0.05f);  
+    glRotatef(45.0f, 0, 0, 1);  
+    glRotatef(-20.0f, 1, 0, 0);  
+  
+    gluCylinder(quad, dedoRaio, dedoRaio, dedoComprimento * 0.8f, 12, 3);  
+    glTranslatef(0.0f, 0.0f, dedoComprimento * 0.8f);  
+    glutSolidSphere(dedoRaio * 1.2f, 12, 12);  
+    glPopMatrix();  
+  
+    // Dardo na mão (modelo detalhado)  
+    if (!lancando && !animando_lancamento) {  
+        glPushMatrix();  
+        glColor3f(0.0f, 0.0f, 1.0f);  
+        glTranslatef(0.0f, 0.2f, 0.0f);  
+        glRotatef(-90, 1, 0, 0);  
+        glutSolidCone(0.025f, 0.4f, 20, 1);  
+  
+        glColor3f(1.0f, 0.0f, 0.0f);  
+        glTranslatef(0.0f, 0.0f, 0.4f);  
+        glutSolidCone(0.05f, 0.1f, 20, 1);  
+  
+        glColor3f(1.0f, 1.0f, 0.0f);  
+        for (int i = 0; i < 3; ++i) {  
+            glPushMatrix();  
+            glRotatef(i * 120.0f, 0, 0, 1);  
+            glTranslatef(0.0f, 0.03f, 0.0f);  
+            glScalef(0.01f, 0.06f, 0.001f);  
+            glutSolidCube(1.0f);  
+            glPopMatrix();  
+        }  
+        glPopMatrix();  
+    }  
+  
+    gluDeleteQuadric(quad);  
+    glPopMatrix();  
 }
+
+
 
 void desenharDardo() {
     if (lancando || passo_animacao >= 1.0f) {
         glPushMatrix();
         glTranslatef(pos_dardo[0], pos_dardo[1], pos_dardo[2]);
 
-        // Corpo
         glColor3f(0.0f, 0.0f, 1.0f);
         glPushMatrix();
-        glScalef(0.05f, 0.4f, 0.05f);
-        glutSolidCube(1.0f);
+        glRotatef(-90, 1, 0, 0);
+        glutSolidCone(0.025f, 0.4f, 20, 1);
         glPopMatrix();
 
-        // Ponta
         glColor3f(1.0f, 0.0f, 0.0f);
         glPushMatrix();
-        glTranslatef(0.0f, 0.22f, 0.0f);
-        glutSolidCone(0.05f, 0.1f, 10, 2);
+        glTranslatef(0.0f, 0.0f, 0.4f);
+        glRotatef(-90, 1, 0, 0);
+        glutSolidCone(0.05f, 0.1f, 20, 1);
         glPopMatrix();
+
+        glColor3f(1.0f, 1.0f, 0.0f);
+        for (int i = 0; i < 3; ++i) {
+            glPushMatrix();
+            glTranslatef(0.0f, 0.0f, -0.05f);
+            glRotatef(i * 120.0f, 0, 0, 1);
+            glTranslatef(0.0f, 0.03f, 0.0f);
+            glScalef(0.01f, 0.06f, 0.001f);
+            glutSolidCube(1.0f);
+            glPopMatrix();
+        }
 
         glPopMatrix();
     }
@@ -375,16 +353,13 @@ void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (state == MENU) {
-    // setup ortho 2D
-    glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
-    gluOrtho2D(0, 800, 0, 600);
-    glMatrixMode(GL_MODELVIEW);  glPushMatrix(); glLoadIdentity();
-    glDisable(GL_DEPTH_TEST);
-
-    // Desenhar frame atual do GIF animado
-    if (!texturaFrames.empty()) {
+        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
+        gluOrtho2D(0, 800, 0, 600);
+        glMatrixMode(GL_MODELVIEW);  glPushMatrix(); glLoadIdentity();
+        glDisable(GL_DEPTH_TEST);
+        
         glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, texturaFrames[frameAtual]);
+        glBindTexture(GL_TEXTURE_2D, texturaFundo);
         glColor3f(1.0f, 1.0f, 1.0f);
 
         glBegin(GL_QUADS);
@@ -395,78 +370,19 @@ void display() {
         glEnd();
 
         glDisable(GL_TEXTURE_2D);
+
+        glColor3f(1,1,1);
+        drawText2D(300, 400, "Jogo de Dardos 3D", GLUT_BITMAP_TIMES_ROMAN_24);
+        drawText2D(300, 350, "1 - Jogo 1v1 (2 jogadores)", GLUT_BITMAP_TIMES_ROMAN_24);
+        drawText2D(300, 320, "2 - Singleplayer (treino)", GLUT_BITMAP_TIMES_ROMAN_24);
+
+        glEnable(GL_DEPTH_TEST);
+        glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
+        glutSwapBuffers();
+        return;
     }
-
-    // Fundo semi-transparente escuro para destacar o menu
-    glColor4f(0.05f, 0.05f, 0.1f, 0.85f);
-    glBegin(GL_QUADS);
-        glVertex2f(150, 150);
-        glVertex2f(650, 150);
-        glVertex2f(650, 450);
-        glVertex2f(150, 450);
-    glEnd();
-
-    // Título centralizado no topo do menu
-    glColor3f(0.9f, 0.9f, 0.9f);
-    void *titleFont = GLUT_BITMAP_TIMES_ROMAN_24;
-    const char* titleText = "Jogo de Dardos 3D";
-    int titleWidth = (int)strlen(titleText) * 12;
-    drawText2D(400 - titleWidth / 2, 420, titleText, titleFont);
-
-    // Botões centralizados verticalmente e horizontalmente
-    const int buttonWidth = 320;
-    const int buttonHeight = 50;
-    const int buttonX = 400 - buttonWidth / 2;
-    int buttonY[2] = { 340, 270 };
-
-    for (int i = 0; i < 2; ++i) {
-        // Botão com gradiente azul escuro para azul médio
-        glBegin(GL_QUADS);
-            glColor3f(0.15f, 0.25f, 0.45f); // topo do botão
-            glVertex2f(buttonX, buttonY[i] + buttonHeight);
-            glVertex2f(buttonX + buttonWidth, buttonY[i] + buttonHeight);
-            glColor3f(0.05f, 0.15f, 0.35f); // base do botão
-            glVertex2f(buttonX + buttonWidth, buttonY[i]);
-            glVertex2f(buttonX, buttonY[i]);
-        glEnd();
-
-        // Borda branca fina
-        glColor3f(1, 1, 1);
-        glLineWidth(2.0f);
-        glBegin(GL_LINE_LOOP);
-            glVertex2f(buttonX, buttonY[i]);
-            glVertex2f(buttonX + buttonWidth, buttonY[i]);
-            glVertex2f(buttonX + buttonWidth, buttonY[i] + buttonHeight);
-            glVertex2f(buttonX, buttonY[i] + buttonHeight);
-        glEnd();
-    }
-
-    // Texto dos botões em branco, centralizado dentro dos botões
-    glColor3f(1, 1, 1);
-    void *buttonFont = GLUT_BITMAP_HELVETICA_18;
-    const char* buttonTexts[2] = { "1 - Jogo 1v1 (2 jogadores)", "2 - Singleplayer (treino)" };
-    for (int i = 0; i < 2; ++i) {
-        int textWidth = (int)strlen(buttonTexts[i]) * 9;
-        int textX = 400 - textWidth / 2;
-        int textY = buttonY[i] + buttonHeight / 2 + 6; // +6 para ajustar verticalmente
-        drawText2D(textX, textY, buttonTexts[i], buttonFont);
-    }
-
-    // Créditos no rodapé do menu, centralizado
-    glColor3f(0.7f, 0.7f, 0.7f);
-    void *creditFont = GLUT_BITMAP_HELVETICA_12;
-    const char* creditText = "Caio Victor Ferreira do Nascimento e Samuel Furtado Fortes";
-    int creditWidth = (int)strlen(creditText) * 9;
-    drawText2D(400 - creditWidth / 2, 120, creditText, creditFont);
-
-    glEnable(GL_DEPTH_TEST);
-    glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
-    glutSwapBuffers();
-    return;
-}
 
     if(state==FINAL){
-        // tela de estatasticas finais
         glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
         gluOrtho2D(0,800,0,600);
         glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
@@ -489,28 +405,24 @@ void display() {
         return;
     }
 
-    // --- codigo existente do jogo ---
-    // Desenhar fundo do jogo
     desenharFundoJogo();
     
     drawHUD();
     glLoadIdentity();
     gluLookAt(0,0,0, 0,0,1, 0,1,0);
     desenharAlvo();
-    desenharMaoEDardo();
+    desenharMaoMelhorada();
     desenharDardo();
     desenharMira();
     desenharMedidor();
     glutSwapBuffers();
 }
 
-// --- Captura tecla para menu e jogo ---
 void keyboard(unsigned char key, int x, int y) {
     if (state == MENU) {
         if (key == '1' || key == '2') {
             mode = (key == '1' ? 1 : 2);
             jogadores.clear();
-            // 1v1 = 2 jogadores, singleplayer = 1 jogador
             int n = (mode == 1 ? 2 : 1);
             for (int i = 0; i < n; ++i) {
                 Jogador J;
@@ -530,7 +442,6 @@ void keyboard(unsigned char key, int x, int y) {
         }
         return;
     }
-    // --- restante do seu keyboard() ---
     if (key == ' ' && !animando_lancamento) {
         oscilando = false;
         animando_lancamento = true;
@@ -546,86 +457,73 @@ void keyboard(unsigned char key, int x, int y) {
     }
 }
 
-void atualizar(int value) {
-    // oscilacao do medidor
-    if (oscilando) {
-        posicao_medidor = sin(glutGet(GLUT_ELAPSED_TIME) * 0.005f);
-    }
-
-    // animacao do braco subindo
-    if (animando_lancamento) {
-        angulo_braco += 5.0f;
-        if (angulo_braco >= 90.0f) {
-            angulo_braco = 90.0f;
-            animando_lancamento = false;
-            lancando = true;
-            passo_animacao = 0.0f;
-
-            // calcula dispersao conforme precisao
-            float scatter = (1.0f - precisao) * RAIO_EXTERNO;
-            float offX = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * scatter;
-            float offY = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * scatter;
-            pos_final[0] = mira_x * RAIO_EXTERNO + offX;
-            pos_final[1] = mira_y * RAIO_EXTERNO + offY;
-            pos_final[2] = DISTANCIA_ALVO;
-        }
-    }
-    // animacao do dardo voando
-    else if (lancando) {
-        passo_animacao += 0.02f;
-        if (passo_animacao >= 1.0f) {
-            passo_animacao = 1.0f;
-            lancando = false;
-            resetando = true;           // inicia reset da mao e medidor
-        }
-        float t = passo_animacao;
-        pos_dardo[0] = pos_final[0] * t;
-        pos_dardo[1] = pos_final[1] * t - 0.5f * GRAVIDADE * t * t;
-        pos_dardo[2] = DISTANCIA_ALVO * t;
-    }
-    // reset: desce o braco e reinicia o medidor
-    else if (resetando) {
-        angulo_braco -= 2.0f;
-        if (angulo_braco <= 0.0f) {
-            angulo_braco    = 0.0f;
-            resetando       = false;
-            oscilando       = true;
-            passo_animacao  = 0.0f;
-            posicao_medidor = 0.0f;
-
-            // calculo de pontos exemplo
-            Jogador &J = jogadores[atual];
-            float dist = sqrt(pos_dardo[0]*pos_dardo[0] +
-                              pos_dardo[1]*pos_dardo[1]);
-            int pts = 0;
-            if (dist <= 0.1f) {
-                pts = 50;
-                J.bull++;
-            } else {
-                pts = int((1.0f - dist/RAIO_EXTERNO) * 10.0f);
-                if (pts < 0) pts = 0;
-            }
-            J.pontos   += pts;
-            J.lances   += 1;
-            J.somaPrec += precisao * 100.0f;
-
-            // avanca jogador/rodada
-            atual++;
-            if (atual >= (int)jogadores.size()) {
-                atual = 0;
-                rodada++;
-                if (rodada > MAX_LANCES) state = FINAL;
-            }
-        }
-    }
-
-    // Atualiza frame do GIF animado no menu
-    if (state == MENU && !texturaFrames.empty()) {
-        frameAtual = (frameAtual + 1) % (int)texturaFrames.size();
-    }
-
-    glutPostRedisplay();
-    glutTimerFunc(16, atualizar, 0);
+void atualizar(int value) {  
+    if (oscilando) {  
+        posicao_medidor = sin(glutGet(GLUT_ELAPSED_TIME) * 0.005f);  
+    }  
+  
+    if (animando_lancamento) {  
+        angulo_braco += 5.0f;  
+        if (angulo_braco >= 90.0f) {  
+            angulo_braco = 90.0f;  
+            animando_lancamento = false;  
+            lancando = true;  
+            passo_animacao = 0.0f;  
+  
+            float scatter = (1.0f - precisao) * RAIO_EXTERNO;  
+            float offX = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * scatter;  
+            float offY = - ((rand() / (float)RAND_MAX) * scatter);  
+            pos_final[0] = mira_x * RAIO_EXTERNO + offX;  
+            pos_final[1] = mira_y * RAIO_EXTERNO + offY;  
+            pos_final[2] = DISTANCIA_ALVO;  
+        }  
+    }  
+    else if (lancando) {  
+        passo_animacao += 0.02f;  
+        if (passo_animacao >= 1.0f) {  
+            passo_animacao = 1.0f;  
+            lancando = false;  
+            resetando = true;  
+        }  
+        float t = passo_animacao;  
+        pos_dardo[0] = pos_final[0] * t;  
+        pos_dardo[1] = pos_final[1] * t - 0.5f * GRAVIDADE * t * t;  
+        pos_dardo[2] = DISTANCIA_ALVO * t;  
+    }  
+    else if (resetando) {  
+        angulo_braco -= 2.0f;  
+        if (angulo_braco <= 0.0f) {  
+            angulo_braco    = 0.0f;  
+            resetando       = false;  
+            oscilando       = true;  
+            passo_animacao  = 0.0f;  
+            posicao_medidor = 0.0f;  
+  
+            Jogador &J = jogadores[atual];  
+            float dist = sqrt(pos_dardo[0]*pos_dardo[0] + pos_dardo[1]*pos_dardo[1]);  
+            int pts = 0;  
+            if (dist <= 0.1f) {  
+                pts = 50;  
+                J.bull++;  
+            } else {  
+                pts = int((1.0f - dist/RAIO_EXTERNO) * 10.0f);  
+                if (pts < 0) pts = 0;  
+            }  
+            J.pontos   += pts;  
+            J.lances   += 1;  
+            J.somaPrec += precisao * 100.0f;  
+  
+            atual++;  
+            if (atual >= (int)jogadores.size()) {  
+                atual = 0;  
+                rodada++;  
+                if (rodada > MAX_LANCES) state = FINAL;  
+            }  
+        }  
+    }  
+  
+    glutPostRedisplay();  
+    glutTimerFunc(16, atualizar, 0);  
 }
 
 void init() {
@@ -637,27 +535,17 @@ void init() {
     gluPerspective(60.0f, 800.0f / 600.0f, 0.1f, 100.0f);
     glMatrixMode(GL_MODELVIEW);
     
-    stbi_set_flip_vertically_on_load(true);
-
+	stbi_set_flip_vertically_on_load(true);
+    
     std::cout << "Carregando texturas..." << std::endl;
     texturaFundoJogo = carregarTextura("imagem-de-fundo-jogo.jpg");
-
-    // Carregar frames do GIF animado para o menu
-    for (int i = 0; i < totalFrames; ++i) {  
-        char filename[64];  
-        sprintf(filename, "frames/frame-%d.png", i);  // sem zeros à esquerda  
-        GLuint tex = carregarTextura(filename);  
-        if (tex != 0) {  
-            texturaFrames.push_back(tex);  
-        } else {  
-            std::cerr << "Falha ao carregar frame: " << filename << std::endl;  
-        }  
-    }
-
+    
+    glEnable(GL_TEXTURE_2D);
+    texturaFundo = carregarTextura("dartboard.jpg");
+    
     std::cout << "Inicialização completa." << std::endl;
 }
 
-// --- Definir callback que faltava para movimentacao da mira ---
 void mouseMotion(int x, int y) {
     int w = glutGet(GLUT_WINDOW_WIDTH);
     int h = glutGet(GLUT_WINDOW_HEIGHT);
@@ -666,9 +554,7 @@ void mouseMotion(int x, int y) {
     glutPostRedisplay();
 }
 
-// --- melhor exibicao de estatasticas no jogo ---
 static void drawHUD(){
-    // mostra placar e lances restantes
     glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
     gluOrtho2D(0,800,0,600);
     glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
@@ -681,12 +567,9 @@ static void drawHUD(){
            << J.lances << "/" << MAX_LANCES;
         drawText2D(10, 580 - 20*i, ss.str().c_str());
     }
-    // Rodada
-    {
-      std::ostringstream os;
-      os << "Rodada " << rodada;
-      drawText2D(600, 580, os.str().c_str());
-    }
+    std::ostringstream os;
+    os << "Rodada " << rodada;
+    drawText2D(600, 580, os.str().c_str());
     glEnable(GL_DEPTH_TEST);
     glPopMatrix(); glMatrixMode(GL_PROJECTION);
     glPopMatrix(); glMatrixMode(GL_MODELVIEW);
